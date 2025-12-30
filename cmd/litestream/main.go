@@ -250,6 +250,7 @@ func DefaultConfig() Config {
 	defaultSnapshotRetention := 24 * time.Hour
 	return Config{
 		Levels: []*CompactionLevelConfig{
+			{Interval: 30 * time.Second},
 			{Interval: 5 * time.Minute},
 			{Interval: 1 * time.Hour},
 		},
@@ -423,35 +424,7 @@ func ParseConfig(r io.Reader, expandEnv bool) (_ Config, err error) {
 	if config.Logging.Stderr {
 		logOutput = os.Stderr
 	}
-
-	logOptions := slog.HandlerOptions{
-		Level:       slog.LevelInfo,
-		ReplaceAttr: internal.ReplaceAttr,
-	}
-
-	switch strings.ToUpper(config.Logging.Level) {
-	case "TRACE":
-		logOptions.Level = internal.LevelTrace
-	case "DEBUG":
-		logOptions.Level = slog.LevelDebug
-	case "INFO":
-		logOptions.Level = slog.LevelInfo
-	case "WARN", "WARNING":
-		logOptions.Level = slog.LevelWarn
-	case "ERROR":
-		logOptions.Level = slog.LevelError
-	}
-
-	var logHandler slog.Handler
-	switch config.Logging.Type {
-	case "json":
-		logHandler = slog.NewJSONHandler(logOutput, &logOptions)
-	case "text", "":
-		logHandler = slog.NewTextHandler(logOutput, &logOptions)
-	}
-
-	// Set global default logger.
-	slog.SetDefault(slog.New(logHandler))
+	initLog(logOutput, config.Logging.Level, config.Logging.Type)
 
 	return config, nil
 }
@@ -1058,4 +1031,40 @@ func (v *txidVar) Set(s string) error {
 	}
 	*v = txidVar(txID)
 	return nil
+}
+
+func initLog(w io.Writer, level, typ string) {
+	logOptions := slog.HandlerOptions{
+		Level:       slog.LevelInfo,
+		ReplaceAttr: internal.ReplaceAttr,
+	}
+
+	// Read log level from environment, if available.
+	if v := os.Getenv("LOG_LEVEL"); v != "" {
+		level = v
+	}
+
+	switch strings.ToUpper(level) {
+	case "TRACE":
+		logOptions.Level = internal.LevelTrace
+	case "DEBUG":
+		logOptions.Level = slog.LevelDebug
+	case "INFO":
+		logOptions.Level = slog.LevelInfo
+	case "WARN", "WARNING":
+		logOptions.Level = slog.LevelWarn
+	case "ERROR":
+		logOptions.Level = slog.LevelError
+	}
+
+	var logHandler slog.Handler
+	switch typ {
+	case "json":
+		logHandler = slog.NewJSONHandler(w, &logOptions)
+	case "text", "":
+		logHandler = slog.NewTextHandler(w, &logOptions)
+	}
+
+	// Set global default logger.
+	slog.SetDefault(slog.New(logHandler))
 }
